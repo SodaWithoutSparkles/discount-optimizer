@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, Tag, Calculator, Share2 } from 'lucide-react';
+import { Plus, Trash2, Tag, Calculator, Share2, AlertCircle } from 'lucide-react';
 import type { Coupon, OptimizationResult } from './types';
 import { calculateOptimization } from './lib/optimizer';
 import { useUrlState } from './hooks/useUrlState';
@@ -175,6 +175,13 @@ function App() {
           {result && (state.total > 0) && (
             <section className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl shadow-xl text-white overflow-hidden">
               <div className="p-6 sm:p-8">
+                {result.warning && (
+                  <div className="mb-6 bg-yellow-900/40 border border-yellow-700/50 rounded-lg p-4 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
+                    <p className="text-yellow-200 text-sm leading-relaxed">{result.warning}</p>
+                  </div>
+                )}
+
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-8 gap-6">
                   <div>
                     <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-1">Final Price To Pay</h3>

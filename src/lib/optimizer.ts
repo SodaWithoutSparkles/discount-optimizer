@@ -11,76 +11,110 @@ export function calculateOptimization(
     coupons: Coupon[],
     totalPrice: number
 ): OptimizationResult {
-    // 1. Convert to integer cents to avoid float issues
-    const scale = 100;
-    let W = Math.round(totalPrice * scale);
-    const items: { cost: number; val: number; originalCouponId: string; realCount: number }[] = [];
+    if (!coupons || coupons.length === 0 || totalPrice <= 0) {
+        return {
+            totalOriginal: totalPrice,
+            totalDiscount: 0,
+            finalPrice: totalPrice,
+            solution: []
+        };
+    }
 
-    // 2. Optimization: Reduce search space by GCD
-    // Calculate GCD of Total Capacity and All Coupon Costs (Thresholds) FIRST.
-    // This allows us to scale down W and costs before expanding them into items.
-    let commonFactor = W;
-    let hasValidCoupons = false;
+    // 1. Setup & Filtering
+    const scale = 100;
+    const W_limit = Math.round(totalPrice * scale);
+    const validCoupons: Coupon[] = [];
+    let totalPossibleCost = 0;
+
     for (const c of coupons) {
         if (c.count > 0 && c.threshold > 0 && c.discount > 0) {
-            hasValidCoupons = true;
             const cost = Math.round(c.threshold * scale);
-            commonFactor = gcd(commonFactor, cost);
+            // Optimization 1: Ignore impossible coupons
+            if (cost <= W_limit) {
+                validCoupons.push(c);
+                totalPossibleCost += cost * c.count;
+            }
         }
     }
 
-    if (commonFactor > 1 && hasValidCoupons) {
+    // 2. Trivial Case
+    // If we can afford all available valid coupons, simply take them all.
+    // This effectively handles the case where W is huge (clamping logic).
+    if (totalPossibleCost <= W_limit) {
+        let totalDiscountScaled = 0;
+        const solution: CouponUsage[] = [];
+
+        for (const c of validCoupons) {
+            totalDiscountScaled += Math.round(c.discount * scale) * c.count;
+            solution.push({ couponId: c.id, count: c.count });
+        }
+
+        const totalDiscount = totalDiscountScaled / scale;
+        return {
+            totalOriginal: totalPrice,
+            totalDiscount: totalDiscount,
+            finalPrice: totalPrice - totalDiscount,
+            solution
+        };
+    }
+
+    // 3. DP Preparation
+    // If we are here, we have more coupons than we can afford.
+    // We must optimize. The capacity is capped at W_limit.
+    let W = W_limit;
+    const items: { cost: number; val: number; originalCouponId: string; realCount: number }[] = [];
+
+    // 4. GCD Reduction (on valid coupons)
+    let commonFactor = W;
+    for (const c of validCoupons) {
+        const cost = Math.round(c.threshold * scale);
+        commonFactor = gcd(commonFactor, cost);
+    }
+
+    if (commonFactor > 1) {
         W /= commonFactor;
     }
 
-    // 3. Expand coupons (Bounded -> 0/1) with Binary Decomposition Optimization
-    // Instead of adding 'count' items, we add log(count) items: 1, 2, 4, 8... remainder.
-    // This transforms O(N*W) to O(log(Count)*N*W)
-    for (const c of coupons) {
-        if (c.count > 0 && c.threshold > 0 && c.discount > 0) {
-            let cost = Math.round(c.threshold * scale);
-            const val = Math.round(c.discount * scale);
+    // 5. Expand (Binary Decomposition)
+    for (const c of validCoupons) {
+        let cost = Math.round(c.threshold * scale);
+        const val = Math.round(c.discount * scale);
 
-            // Apply scale down if applicable
-            if (commonFactor > 1) {
-                cost /= commonFactor;
-            }
+        if (commonFactor > 1) {
+            cost /= commonFactor;
+        }
 
-            let count = c.count;
-            let currentPower = 1;
-            while (count >= currentPower) {
-                items.push({
-                    cost: cost * currentPower,
-                    val: val * currentPower,
-                    originalCouponId: c.id,
-                    realCount: currentPower
-                });
-                count -= currentPower;
-                currentPower *= 2;
-            }
-            if (count > 0) {
-                items.push({
-                    cost: cost * count,
-                    val: val * count,
-                    originalCouponId: c.id,
-                    realCount: count
-                });
-            }
+        let count = c.count;
+        let currentPower = 1;
+        while (count >= currentPower) {
+            items.push({
+                cost: cost * currentPower,
+                val: val * currentPower,
+                originalCouponId: c.id,
+                realCount: currentPower
+            });
+            count -= currentPower;
+            currentPower *= 2;
+        }
+        if (count > 0) {
+            items.push({
+                cost: cost * count,
+                val: val * count,
+                originalCouponId: c.id,
+                realCount: count
+            });
         }
     }
 
     // Check memory limits
     if (W > MAX_SLOTS) {
-        // Fallback or error? For now, let's clamp or return error logic.
-        // In a real app we might heuristic sort.
-        // For this assignment, let's just log and try our best with a heuristic or fail.
-        // Let's just limit items? Or just proceed and risk it? 
-        // It's client side. 
-        console.warn("Total amount too high for optimal DP, results may be approximate or slow.");
-        // For now, return empty or implement greedy? 
-        // Let's implement a simple greedy fallback if too big?
-        // Actually, knapsack on 5M is fine in JS (Int32Array).
-        // MAX_SLOTS = 5_000_000.
+        return {
+            totalOriginal: totalPrice,
+            totalDiscount: 0,
+            finalPrice: totalPrice,
+            solution: [],
+            warning: "Total calculated amount is too high for the browser optimizer. Please try reducing the total amount or using larger coupon denominations."
+        };
     }
 
     // 4. DP Initialization

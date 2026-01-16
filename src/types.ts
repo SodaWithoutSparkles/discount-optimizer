@@ -15,6 +15,5 @@ export interface OptimizationResult {
     totalDiscount: number;
     finalPrice: number;
     solution: CouponUsage[];
-    // We can also store the 'unused' counts for display if needed, 
-    // but we can compute that from the input + solution.
+    warning?: string;
 }
